@@ -83,6 +83,7 @@ def load_file(file):
         if not value_vars:
             st.error("No numeric pH columns detected.")
             st.stop()
+            
         # Melt to long format
         long_df = df.melt(id_vars=["protein"], value_vars=value_vars,
                           var_name="pH", value_name="Fold Ratio")
@@ -96,8 +97,6 @@ def load_file(file):
     except Exception as e:
         st.error(f"Failed to load file: {e}")
         st.stop()
-
-
 
 # --- Curve Fitting Function ---
 def safe_fit_melting_curve(df, protein_name):
@@ -211,7 +210,7 @@ if uploaded_file:
 
     ax.set_xlabel("pH", color="white")
     ax.set_ylabel("Protein Abundance Level (0–1)", color="white")
-    ax.set_title(f"Denaturation Profile: {Protein}", color="white", fontsize=14)
+    ax.set_title(f"{Protein}", color="white", fontsize=20)
     ax.tick_params(colors="white")
 
     leg = ax.legend(facecolor="black", edgecolor="white")
@@ -219,8 +218,6 @@ if uploaded_file:
         text.set_color("white")
 
     st.pyplot(fig)
-
-    
 
 # --- Batch Fit Option ---
 if "batch_df" not in st.session_state:
