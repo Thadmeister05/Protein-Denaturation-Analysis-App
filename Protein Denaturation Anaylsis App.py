@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import zscore
 
-
-# streamlit run GUI/Protein\ Denaturation\ Anaylsis\ App.py
-
 # --- App Setup ---
 st.set_page_config(layout="wide")
 st.title("Protein Denaturation Analysis")
