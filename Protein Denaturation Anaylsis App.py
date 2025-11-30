@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import zscore
 
+
 # streamlit run GUI/Protein\ Denaturation\ Anaylsis\ App.py
 
 # --- App Setup ---
@@ -22,7 +23,7 @@ st.markdown("""
 with st.expander("📖 How to Use This App"):
     st.markdown("""
     ### 1. File Format
-    - **CSV** or **Excel** (`.xlsx`, `.xls`) supported
+    - **Excel** (`.xlsx`, `.xls`) supported
     - First column: protein names (unique)
     - Remaining columns: numeric pH values (e.g., 4, 4.5, 5)
     - Rows: intensity measurements per protein
@@ -33,7 +34,7 @@ with st.expander("📖 How to Use This App"):
     3. View normalized Protein Abundance Level & fitted curve
     4. Inspect residuals & outliers
     5. Optionally run batch fit for all proteins
-    6. Download results as CSV
+    6. Download results
 
     ### 3. Output Explanation
     - **k (Slope):** steepness of curve
@@ -44,7 +45,6 @@ with st.expander("📖 How to Use This App"):
     ### 4. Tips
     - Avoid missing or non-numeric pH headers
     - Keep protein names unique
-    - Outliers (>2 SD) are flagged automatically
     """)
 
 # --- Melting Curve Function ---
@@ -88,10 +88,10 @@ def load_file(file):
             st.stop()
         # Melt to long format
         long_df = df.melt(id_vars=["protein"], value_vars=value_vars,
-                          var_name="pH", value_name="Intensity")
+                          var_name="pH", value_name="Fold Ratio")
         long_df["pH"] = pd.to_numeric(long_df["pH"], errors="coerce")
-        long_df["Intensity"] = pd.to_numeric(long_df["Intensity"], errors="coerce")
-        long_df = long_df.dropna(subset=["pH","Intensity"])
+        long_df["Fold Ratio"] = pd.to_numeric(long_df["Fold Ratio"], errors="coerce")
+        long_df = long_df.dropna(subset=["pH","Fold Ratio"])
         if long_df.empty:
             st.error("No valid data found after cleaning.")
             st.stop()
@@ -129,19 +129,33 @@ def safe_fit_melting_curve(df, protein_name):
 # --- Main App Logic ---
 if uploaded_file:
     long_df = load_file(uploaded_file)
-
-    st.subheader("Data Preview")
+    st.markdown("---")
+    st.subheader(f"Data Preview of {uploaded_file.name}")
+    
     # Take the first row per protein to show a compact table
-    preview = long_df.groupby("protein").first().reset_index()
-    st.dataframe(preview)
+    preview_wide = long_df.pivot_table(
+       index = "protein",
+       columns = "pH",
+       values = "Fold Ratio",
+       aggfunc = "mean"
+   ).reset_index()
+    
+    # Sort columns so pH values are ascending
+    preview_wide = preview_wide.reindex(
+    columns=["protein"] + sorted([c for c in preview_wide.columns if c != "protein"])
+    )
+
+    # Show first 10 proteins
+    st.dataframe(preview_wide.head(10))
 
     # Sidebar: select protein
     Protein = st.sidebar.selectbox("Select a protein", long_df["protein"].unique())
     filtered = long_df[long_df["protein"] == Protein].copy()
+    
     # Normalize
     filtered["Protein Abundance Level"] = (
-        (filtered["Intensity"] - filtered["Intensity"].min()) /
-        (filtered["Intensity"].max() - filtered["Intensity"].min())
+        (filtered["Fold Ratio"] - filtered["Fold Ratio"].min()) /
+        (filtered["Fold Ratio"].max() - filtered["Fold Ratio"].min())
     )
 
     # Summary
@@ -153,6 +167,24 @@ if uploaded_file:
     fit_results = pd.DataFrame([fit_result])
     st.subheader("Single Protein Fit Results")
     st.dataframe(fit_results)
+    
+    st.markdown("---")
+    st.header("Fit Quality Guide")
+
+    st.markdown("""
+    Here’s how to interpret the quality of a protein fit:
+
+    - 🟢 **Excellent Fit:** R² ≥ 0.95  
+  The fitted curve closely follows the observed data. Residuals are small, and the trend is accurately captured.
+
+    - 🟡 **Moderate Fit:** 0.80 ≤ R² < 0.95  
+  The fit captures the general trend, but some deviations exist. Use caution when interpreting results.
+
+    - 🔴 **Poor Fit:** R² < 0.80  
+  The fitted curve does not adequately describe the data. Check data quality or consider alternative fitting models.
+    """)
+    st.markdown("---")
+
 
     # --- Plotting ---
     show_raw = st.sidebar.checkbox("Show raw data", True)
@@ -161,74 +193,66 @@ if uploaded_file:
 
     fig, ax = plt.subplots(facecolor="black")
     ax.set_facecolor("black")
-    ax.scatter(abundance_summary["pH"], abundance_summary["Mean Protein Abundance Level"],
-               color="silver", s=60, label="Mean Protein Abundance Level")
+
+    # RAW DATA ONLY
     if show_raw:
         ax.scatter(filtered["pH"], filtered["Protein Abundance Level"],
-                   color="lightblue", alpha=0.6, s=40, label="Raw Data")
+               color="lightblue", alpha=0.6, s=40, label="Raw Data")
+
+    # FITTED CURVE
     if show_fit_line and not np.isnan(fit_result["k (Slope)"]):
         x_fit = np.linspace(filtered["pH"].min(), filtered["pH"].max(), 200)
         y_fit = melting_curve(x_fit, fit_result["k (Slope)"], fit_result["pH₅₀ (xo)"])
         ax.plot(x_fit, y_fit, color="white", linewidth=2.2, label="Fitted Curve")
+
+    # pH50 MARKER
     if show_ph50_marker and not np.isnan(fit_result["pH₅₀ (xo)"]):
         ph50_y = melting_curve(fit_result["pH₅₀ (xo)"], fit_result["k (Slope)"], fit_result["pH₅₀ (xo)"])
         ax.scatter(fit_result["pH₅₀ (xo)"], ph50_y,
-                   s=120, edgecolor="white", facecolor="cyan", zorder=5,
-                   label=f"pH₅₀={fit_result['pH₅₀ (xo)']:.2f}")
+               s=120, edgecolor="white", facecolor="cyan", zorder=5,
+               label=f"pH₅₀={fit_result['pH₅₀ (xo)']:.2f}")
+
     ax.set_xlabel("pH", color="white")
     ax.set_ylabel("Protein Abundance Level (0–1)", color="white")
     ax.set_title(f"Denaturation Profile: {Protein}", color="white", fontsize=14)
     ax.tick_params(colors="white")
+
     leg = ax.legend(facecolor="black", edgecolor="white")
-    for text in leg.get_texts(): text.set_color("white")
+    for text in leg.get_texts():
+        text.set_color("white")
+
     st.pyplot(fig)
 
-    # --- Residuals Plot ---
-    show_residuals = st.sidebar.checkbox("Show residuals plot", True)
-    show_outliers = st.sidebar.checkbox("Highlight outliers (>2 SD)", True)
-    if show_residuals and not np.isnan(fit_result["k (Slope)"]):
-        y_pred = melting_curve(filtered["pH"], fit_result["k (Slope)"], fit_result["pH₅₀ (xo)"])
-        residuals = filtered["Protein Abundance Level"] - y_pred
-        fig_res, ax_res = plt.subplots(facecolor="black")
-        ax_res.set_facecolor("black")
-        ax_res.axhline(0, color="white", linestyle="--", linewidth=1)
-        if show_outliers:
-            std_res = residuals.std()
-            outliers = residuals[np.abs(residuals) > 2*std_res]
-            ax_res.scatter(outliers.index, outliers.values, color="red", s=70, label="Outliers (>2 SD)")
-        ax_res.scatter(residuals.index, residuals.values, color="lightblue", alpha=0.7, label="Residuals")
-        ax_res.set_xlabel("Data Point Index", color="white")
-        ax_res.set_ylabel("Residual (Observed - Fitted)", color="white")
-        ax_res.set_title(f"Residuals Plot: {Protein}", color="white", fontsize=13)
-        ax_res.tick_params(colors="white")
-        leg = ax_res.legend(facecolor="black", edgecolor="white")
-        for text in leg.get_texts(): text.set_color("white")
-        st.pyplot(fig_res)
-        
-    st.markdown("<br></br>", unsafe_allow_html=True)
+    
 
-    # --- Batch Fit Option ---
-    st.markdown("---")
-    st.header("Batch Fit for All Proteins")
-    if st.button("Run Batch Fit"):
-        batch_results = []
-        for prot in long_df["protein"].unique():
-            subset = long_df[long_df["protein"] == prot].copy()
-            subset["Protein Abundance Level"] = (
-                (subset["Intensity"] - subset["Intensity"].min()) /
-                (subset["Intensity"].max() - subset["Intensity"].min())
-            )
-            batch_results.append(safe_fit_melting_curve(subset, prot))
-        batch_df = pd.DataFrame(batch_results)
-        st.subheader("Batch Fit Results")
-        st.dataframe(batch_df)
-        csv_all = batch_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="Download All Protein Fits",
-            data=csv_all,
-            file_name="All_Proteins_Fit_Results.csv",
-            mime="text/csv"
-        )
+# --- Batch Fit Option ---
+if "batch_df" not in st.session_state:
+    st.session_state["batch_df"] = pd.DataFrame()
+
+if st.button("Run Batch Fit"):
+    batch_results = []
+    for prot in long_df["protein"].unique():
+        subset = long_df[long_df["protein"] == prot].copy()
+        fr_min = subset["Fold Ratio"].min()
+        fr_max = subset["Fold Ratio"].max()
+        if fr_max != fr_min:
+            subset["Protein Abundance Level"] = (subset["Fold Ratio"] - fr_min) / (fr_max - fr_min)
+        else:
+            subset["Protein Abundance Level"] = 0.5
+        batch_results.append(safe_fit_melting_curve(subset, prot))
+    st.session_state["batch_df"] = pd.DataFrame(batch_results)
+
+if not st.session_state["batch_df"].empty:
+    st.subheader("Batch Fit Results")
+    st.dataframe(st.session_state["batch_df"])
+    csv_all = st.session_state["batch_df"].to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download All Protein Fits",
+        data=csv_all,
+        file_name="All_Proteins_Fit_Results.csv",
+        mime="text/csv"
+    )
+
 
 else:
-    st.info("Upload a CSV or Excel file to begin analysis.")
+    st.info("Upload an Excel file to begin analysis.")
