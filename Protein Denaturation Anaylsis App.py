@@ -20,7 +20,7 @@ st.markdown("""
 with st.expander("📖 How to Use This App"):
     st.markdown("""
     ### 1. File Format
-    - **Excel** (`.xlsx`, `.xls`) supported
+    - **Excel** and **CSV** (`.csv`,`.xlsx`, `.xls`) supported
     - First column: protein names (unique)
     - Remaining columns: numeric pH values (e.g., 4, 4.5, 5)
     - Rows: intensity measurements per protein
@@ -83,7 +83,6 @@ def load_file(file):
         if not value_vars:
             st.error("No numeric pH columns detected.")
             st.stop()
-            
         # Melt to long format
         long_df = df.melt(id_vars=["protein"], value_vars=value_vars,
                           var_name="pH", value_name="Fold Ratio")
@@ -97,6 +96,8 @@ def load_file(file):
     except Exception as e:
         st.error(f"Failed to load file: {e}")
         st.stop()
+
+
 
 # --- Curve Fitting Function ---
 def safe_fit_melting_curve(df, protein_name):
@@ -210,7 +211,7 @@ if uploaded_file:
 
     ax.set_xlabel("pH", color="white")
     ax.set_ylabel("Protein Abundance Level (0–1)", color="white")
-    ax.set_title(f"{Protein}", color="white", fontsize=20)
+    ax.set_title(f"{Protein}", color = "white", fontsize = 20)
     ax.tick_params(colors="white")
 
     leg = ax.legend(facecolor="black", edgecolor="white")
@@ -219,22 +220,27 @@ if uploaded_file:
 
     st.pyplot(fig)
 
+    
+
 # --- Batch Fit Option ---
 if "batch_df" not in st.session_state:
     st.session_state["batch_df"] = pd.DataFrame()
 
 if st.button("Run Batch Fit"):
-    batch_results = []
-    for prot in long_df["protein"].unique():
-        subset = long_df[long_df["protein"] == prot].copy()
-        fr_min = subset["Fold Ratio"].min()
-        fr_max = subset["Fold Ratio"].max()
-        if fr_max != fr_min:
-            subset["Protein Abundance Level"] = (subset["Fold Ratio"] - fr_min) / (fr_max - fr_min)
-        else:
-            subset["Protein Abundance Level"] = 0.5
-        batch_results.append(safe_fit_melting_curve(subset, prot))
-    st.session_state["batch_df"] = pd.DataFrame(batch_results)
+    if "long_df" not in st.session_state or st.session_state["long_df"].empty:
+        st.error("⚠️ No data loaded. Please upload a file before running the batch fit.")
+    else:
+        batch_results = []
+        for prot in long_df["protein"].unique():
+            subset = long_df[long_df["protein"] == prot].copy()
+            fr_min = subset["Fold Ratio"].min()
+            fr_max = subset["Fold Ratio"].max()
+            if fr_max != fr_min:
+                subset["Protein Abundance Level"] = (subset["Fold Ratio"] - fr_min) / (fr_max - fr_min)
+            else:
+                subset["Protein Abundance Level"] = 0.5
+            batch_results.append(safe_fit_melting_curve(subset, prot))
+        st.session_state["batch_df"] = pd.DataFrame(batch_results)
 
 if not st.session_state["batch_df"].empty:
     st.subheader("Batch Fit Results")
