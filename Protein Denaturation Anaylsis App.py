@@ -29,9 +29,8 @@ with st.expander("📖 How to Use This App"):
     1. Upload your file
     2. Select a protein
     3. View normalized Protein Abundance Level & fitted curve
-    4. Inspect residuals & outliers
-    5. Optionally run batch fit for all proteins
-    6. Download results
+    4. Optionally run batch fit for all proteins
+    5. Download results
 
     ### 3. Output Explanation
     - **k (Slope):** steepness of curve
